@@ -16,8 +16,8 @@ def InitialC(n1,n2): 			#creating an n by n array of a displacement function whi
 
 def Position(dis): 							#returning a position field
 	field = np.zeros(dis.shape) 				#field has the same dimention as dis
-	x = np.arange(0,dis.shape[0],1.) 	# x coordinate ranged from 0 to size of displacement coordinate
-	y = np.arange(0,dis.shape[1],1.) 	# y coordinate ranged from 0 to size of displacement coordinate
+	x = np.arange(0,dis.shape[1],1.) 	# x coordinate ranged from 0 to size of displacement coordinate
+	y = np.arange(0,dis.shape[0],1.) 	# y coordinate ranged from 0 to size of displacement coordinate
 	field[:,:,0] , field[:,:,1] = np.meshgrid(x, y) #fill elements in field with x,y coordinate
 	field = field + dis #add displacment to coordinate
 	return field
@@ -58,7 +58,7 @@ def EE(e,lab,miu): #from strain matrix,lambda and miu(lame constant) calculate s
 def rad(dis,S): #gengerating a random matrix, and a random sequence 
 	#S is the function defined by Const. * exp(-1/T)
 	dL = np.multiply(S, np.random.exponential(1,np.append(1000,dis.shape)))
-	dL = np.multiply(np.random.choice([-1,0,0,0,0,0,0,0,1],np.append(1000,dis.shape)),dL)
+	dL = np.multiply(np.random.choice([-1,0,0,0,1],np.append(1000,dis.shape)),dL)
 	Se = np.random.randint(1000, size = 1000)
 	
 	return dL, Se
@@ -92,11 +92,11 @@ def BC(dis): #check boundary conditions
 		if dis[dis.shape[0]-3,idx,1] > bc_ +2:
 			dis[dis.shape[0]-3,idx,1] = bc_+2
 	return dis
-
-def anneal(dis):
-	lab = 0.015
-	miu = 0.01
-	S = [0.0001,0.00002,0.00001, 0.00001, 0.00001] #from temperture high to low,
+	
+def anneal_s(dis): #quick annealing
+	lab = 0.015  
+	miu = 0.04
+	S = [0.00001,0.00001,0.00001, 0.000005, 0.000001] #from temperture high to low,
 	rad_ = np.zeros(np.append([5,1000],dis.shape)) #there are 4 times 50 times dis.shape number of element in this matrix
 	rad_id = np.zeros([5,1000])
 	for idx,Si in enumerate(S): #generating annealing matrix
@@ -106,21 +106,37 @@ def anneal(dis):
 		for j in range(0,5):
 			for k in rad_id[j]:
 				dis = vari(dis,rad_[i,k],lab,miu)
-		print "iteration,"	,i
-		print "E = ", EE(Strain(dis),lab,miu)
+	E_1 = EE(Strain(dis),lab,miu)
+	return E_1,dis
+	
+def anneal(dis):
+	lab = 0.015
+	miu = 0.04
+	S = [0.00001,0.00001,0.00001, 0.000005, 0.000001] #from temperture high to low,
+	rad_ = np.zeros(np.append([5,1000],dis.shape)) #there are 4 times 50 times dis.shape number of element in this matrix
+	rad_id = np.zeros([5,1000])
+	for idx,Si in enumerate(S): #generating annealing matrix
+		rad_[idx], rad_id[idx] = rad(dis,Si)
+		
+	for i in range(0,5):
+		for j in range(0,5):
+			for k in rad_id[j]:
+				dis = vari(dis,rad_[i,k],lab,miu)
+	print "iteration,"	,1
+	print "E = ", EE(Strain(dis),lab,miu)
 		#Ess = np.append(EE(Strain(dis),lab,miu),Ess)	#recording change of E
 	
 	E_0 = EE(Strain(dis),lab,miu)
 	
-	print "new iteration"
+	#print "new iteration"
 	np.random.shuffle(rad_id)
 	
 	for i in range(0,5):
 		for j in range(0,5):
 			for k in rad_id[j]:
 				dis = vari(dis,rad_[i,k],lab,miu)
-		print "iteration,"	,i
-		print "E = ", EE(Strain(dis),lab,miu)		
+	print "iteration,"	,2
+	print "E = ", EE(Strain(dis),lab,miu)		
 		#Ess = np.append(EE(Strain(dis),lab,miu),Ess)	#recording change of E
 		
 	E_1 = EE(Strain(dis),lab,miu)
@@ -129,13 +145,13 @@ def anneal(dis):
 	
 	while E_1 < E_0 and n < 3:
 		np.random.shuffle(rad_id)		
-		print "new iteration"
+		#print "new iteration"
 		for i in range(0,5):
 			for j in range(0,5):
 				for k in rad_id[j]:
 					dis = vari(dis,rad_[i,k],lab,miu)
-			print "iteration,"	,i
-			print "E = ", EE(Strain(dis),lab,miu)
+		print "iteration,"	, n + 3
+		print "E = ", EE(Strain(dis),lab,miu)
 			#Ess = np.append(EE(Strain(dis),lab,miu),Ess) #recording change of E
 		E_1 = EE(Strain(dis),lab,miu)
 		n+=1
@@ -156,14 +172,56 @@ def draw(dis):
 	plt.axis([0,x+20,0,y+20])
 	plt.show()
 
+def savefile(dis):
+	f_name = raw_input("Save the data as:")
+	outfile = open(f_name,'w')
+	np.save(outfile, dis)
+	outfile.close
 
-sam = InitialC(30,30)
+def readfile():
+	f_name = raw_input("read which file?")
+	infile = open(f_name, 'rb')
+	infile.seek(0)
+	dis = np.load(infile)
+	return dis
+	
+def draw_shear(dis):# draw shear strain
+	pos = Position(dis) #get position mesh
+	e = Strain(dis)
+	shear = e[:,:,3]
+	#draw gridlines
+	for i in range(0,pos.shape[1]):
+		plt.plot(pos[:,i,0],pos[:,i,1],linewidth = 0.5, color = 'grey')
+	for j in range(0,pos.shape[0]):
+		plt.plot(pos[j,:,0],pos[j,:,1],linewidth = 0.5, color = 'grey')
+	x = dis.shape[0]-1  #it seems x, y used reversly underneath this line
+	y = dis.shape[1]-1
+	plt.plot(pos[:,y,0],pos[:,y,1],linewidth = 0.5, color = 'black')
+	plt.plot(pos[x,:,0],pos[x,:,1],linewidth = 0.5, color = 'black')
+	#plot shear map
+	x_mesh, y_mesh = pos[:,:,0],pos[:,:,1]
+	shear = shear[:-1,:-1] #the shear strain on the surface is not actual shear strain,removethem
+	shear_min, shear_max = -np.abs(shear).max(), np.abs(shear).max()
+	plt.pcolor(x_mesh, y_mesh, shear, cmap='RdBu', vmin=shear_min, vmax=shear_max)
+	plt.axis([0,y+20,0,x+20])
+	plt.show()
+
+sam = InitialC(30,50)
+#sam = readfile()
 Ex = np.zeros(20)
-for i in range(0,20):
-	Ex[i],sam = anneal(sam)
+draw_shear(sam)
+Ex[1],sam = anneal_s(sam) #quick annealing
+draw_shear(sam)#roughly know the configuration of shear
+
+for i in range(0,20): #multiple iteration to get accurate result
+	Ex[i+1],sam = anneal(sam)
+	print "anneal time:" , i
+	print "E = ", Ex[i+1]
+
 #print sam
 #sam = BC(sam)
-draw(sam)
+draw_shear(sam)
 Ex = Ex[:-1]
 plt.plot(Ex)
 plt.show()
+savefile(sam)
