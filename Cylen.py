@@ -7,6 +7,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy import *
+from scipy.ndimage.filters import gaussian_filter
 
 unit = 1. #unit of calculation
 
@@ -57,9 +58,10 @@ def EE(e,lab,miu): #from strain matrix,lambda and miu(lame constant) calculate s
 
 def rad(dis,S): #gengerating a random matrix, and a random sequence 
 	#S is the function defined by Const. * exp(-1/T)
-	dL = np.multiply(S, np.random.exponential(1,np.append(1000,dis.shape)))
-	dL = np.multiply(np.random.choice([-1,0,0,0,1],np.append(1000,dis.shape)),dL)
-	Se = np.random.randint(1000, size = 1000)
+	dL = np.multiply(S, np.random.exponential(1,np.append(500,dis.shape)))
+	dL = np.multiply(np.random.choice([-1,0,0,0,0,1],np.append(500,dis.shape)),dL)
+	#dL = np.multiply(dL,Emap(dis))#using Energy map to pin point variation site
+	Se = np.random.randint(500, size = 500)
 	
 	return dL, Se
 
@@ -81,27 +83,24 @@ def BC(dis): #check boundary conditions
 	dis[0,:]=[0,0] #no displacement at z=0
 	dis[:,0,0] = 0 #no r direction displacement at r=0
 	dis[:,dis.shape[1] - 1,0] = 0 #no r direction displacement at r = r_max
-	bc = np.add(-2,np.multiply(0.01,np.square(np.arange(0,dis.shape[1]-1,1.)))) #bundary condition of a parabolic function
-	for idx,bc_ in enumerate(bc): #check boundary condition
-		if dis[dis.shape[0]-1,idx,1] > bc_:
-			dis[dis.shape[0]-1,idx,1] = bc_
-	for idx,bc_ in enumerate(bc):
-		if dis[dis.shape[0]-2,idx,1] > bc_ +1:
-			dis[dis.shape[0]-2,idx,1] = bc_+1
-	for idx,bc_ in enumerate(bc):
-		if dis[dis.shape[0]-3,idx,1] > bc_ +2:
-			dis[dis.shape[0]-3,idx,1] = bc_+2
+	displ = 5 #displacment of indenter
+	bc = np.add(-displ,np.multiply(0.01,np.square(np.arange(0,dis.shape[1]-1,1.)))) #bundary condition of a parabolic function
+	for i in range(0,displ+2):
+		for idx,bc_ in enumerate(bc): #check boundary condition
+			if dis[dis.shape[0]-1-i,idx,1] > bc_+i:
+				dis[dis.shape[0]-1-i,idx,1] = bc_+i
+	
 	return dis
 	
 def anneal_s(dis): #quick annealing
 	lab = 0.015  
 	miu = 0.04
-	S = [0.00001,0.00001,0.00001, 0.000005, 0.000001] #from temperture high to low,
-	rad_ = np.zeros(np.append([5,1000],dis.shape)) #there are 4 times 50 times dis.shape number of element in this matrix
-	rad_id = np.zeros([5,1000])
+	S = [0.0001,0.0001,0.00005, 0.000005, 0.000001] #from temperture high to low,
+	rad_ = np.zeros(np.append([5,500],dis.shape)) #there are 4 times 50 times dis.shape number of element in this matrix
+	rad_id = np.zeros([5,500])
 	for idx,Si in enumerate(S): #generating annealing matrix
 		rad_[idx], rad_id[idx] = rad(dis,Si)
-		
+		rad_[idx] = np.multiply(rad_[idx],Emap(dis))#using energy map to accelerate calculation
 	for i in range(0,5):
 		for j in range(0,5):
 			for k in rad_id[j]:
@@ -112,12 +111,15 @@ def anneal_s(dis): #quick annealing
 def anneal(dis):
 	lab = 0.015
 	miu = 0.04
-	S = [0.00001,0.00001,0.00001, 0.000005, 0.000001] #from temperture high to low,
-	rad_ = np.zeros(np.append([5,1000],dis.shape)) #there are 4 times 50 times dis.shape number of element in this matrix
-	rad_id = np.zeros([5,1000])
+	S = [0.00005,0.00001,0.00001, 0.000005, 0.000001] #from temperture high to low,
+	rad_ = np.zeros(np.append([5,500],dis.shape)) #there are 4 times 50 times dis.shape number of element in this matrix
+	rad_id = np.zeros([5,500])
 	for idx,Si in enumerate(S): #generating annealing matrix
 		rad_[idx], rad_id[idx] = rad(dis,Si)
-		
+	
+	rad_[1] = np.multiply(rad_[1],Emap(dis)) #making first one using energy map
+	rad_[2] = np.multiply(rad_[2],Emap(dis)) #making second one using energy map
+	
 	for i in range(0,5):
 		for j in range(0,5):
 			for k in rad_id[j]:
@@ -142,7 +144,6 @@ def anneal(dis):
 	E_1 = EE(Strain(dis),lab,miu)
 	
 	n=0
-	
 	while E_1 < E_0 and n < 3:
 		np.random.shuffle(rad_id)		
 		#print "new iteration"
@@ -206,17 +207,38 @@ def draw_shear(dis):# draw shear strain
 	plt.axis([0,y+20,0,x+20])
 	plt.show()
 
-sam = InitialC(30,50)
+def Emap(dis): #finding the energy concentrated part
+	dis = BC(dis)
+	e = Strain(dis)
+	e_ii2 = np.add(np.square(e[:,:,0]),np.square(e[:,:,1]),np.square(e[:,:,2]))
+	e_ik2 = np.multiply(2,np.square(e[:,:,3]))
+	dE = np.add(np.multiply( 1/2, e_ii2) , np. multiply(1, e_ik2))#energy of each element
+	Emap = gaussian_filter(dE, sigma = 20) #Energy flow to adjacent elements
+	E_max = np.amax(Emap)
+	#print E_max
+	Emap = np.divide(Emap, E_max ) #normalize Emap with maxium value of Emap
+	#turncate the small value in Emap
+	#Emap = np.multiply(100,Emap)
+	#Emap = Emap.astype(int)
+	#Emap = Emap.astype(float)
+	#Emap = np.divide(Emap,100)
+	
+	Emap_v = np.zeros(np.append(500,dis.shape)) #scale to vectors, inorder to used in variation 
+	Emap_v[:,:,:,0] = Emap
+	Emap_v[:,:,:,1] = Emap
+	return Emap_v
+	
+sam = InitialC(50,50)
 #sam = readfile()
-Ex = np.zeros(20)
-draw_shear(sam)
-Ex[1],sam = anneal_s(sam) #quick annealing
+Ex = np.zeros(40)
+#draw_shear(sam)
+Ex[0],sam = anneal_s(sam) #quick annealing
 draw_shear(sam)#roughly know the configuration of shear
-
-for i in range(0,20): #multiple iteration to get accurate result
-	Ex[i+1],sam = anneal(sam)
+Ex[1],sam = anneal_s(sam)
+for i in range(0,37): #multiple iteration to get accurate result
+	Ex[i+2],sam = anneal(sam)
 	print "anneal time:" , i
-	print "E = ", Ex[i+1]
+	print "E = ", Ex[i+2]
 
 #print sam
 #sam = BC(sam)
