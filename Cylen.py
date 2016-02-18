@@ -59,7 +59,7 @@ def EE(e,lab,miu): #from strain matrix,lambda and miu(lame constant) calculate s
 def rad(dis,S): #gengerating a random matrix, and a random sequence 
 	#S is the function defined by Const. * exp(-1/T)
 	dL = np.multiply(S, np.random.exponential(1,np.append(500,dis.shape)))
-	dL = np.multiply(np.random.choice([-1,0,0,0,0,1],np.append(500,dis.shape)),dL)
+	dL = np.multiply(np.random.choice([-1,1],np.append(500,dis.shape)),dL)
 	#dL = np.multiply(dL,Emap(dis))#using Energy map to pin point variation site
 	Se = np.random.randint(500, size = 500)
 	
@@ -74,8 +74,7 @@ def vari(dis,dN,lab,miu): #give a fluctuation over the entire displacement matri
 	#print EE(E_0, lab, miu)
 	#print "-", EE(E_1, lab, miu)
 	if EE(E_0, lab, miu) >= EE(E_1, lab, miu):#if energy decreased, choose the new value
-		return dis_1
-		
+		return dis_1	
 	else:
 		return dis
 
@@ -83,9 +82,9 @@ def BC(dis): #check boundary conditions
 	dis[0,:]=[0,0] #no displacement at z=0
 	dis[:,0,0] = 0 #no r direction displacement at r=0
 	dis[:,dis.shape[1] - 1,0] = 0 #no r direction displacement at r = r_max
-	displ = 5 #displacment of indenter
+	global displ #displacment of indenter, as a global variable, make it easy to change when doing different indentations
 	bc = np.add(-displ,np.multiply(0.01,np.square(np.arange(0,dis.shape[1]-1,1.)))) #bundary condition of a parabolic function
-	for i in range(0,displ+2):
+	for i in range(0,int(displ)+2):
 		for idx,bc_ in enumerate(bc): #check boundary condition
 			if dis[dis.shape[0]-1-i,idx,1] > bc_+i:
 				dis[dis.shape[0]-1-i,idx,1] = bc_+i
@@ -93,8 +92,8 @@ def BC(dis): #check boundary conditions
 	return dis
 	
 def anneal_s(dis): #quick annealing
-	lab = 0.015  
-	miu = 0.04
+	global lab 
+	global miu
 	S = [0.0001,0.0001,0.00005, 0.000005, 0.000001] #from temperture high to low,
 	rad_ = np.zeros(np.append([5,500],dis.shape)) #there are 4 times 50 times dis.shape number of element in this matrix
 	rad_id = np.zeros([5,500])
@@ -170,7 +169,7 @@ def draw(dis):
 	y = dis.shape[1]-1
 	plt.plot(pos[:,y,0],pos[:,y,1],'b-')
 	plt.plot(pos[x,:,0],pos[x,:,1],'b-')
-	plt.axis([0,x+20,0,y+20])
+	plt.axis([0,x+10,0,y+10])
 	plt.show()
 
 def savefile(dis):
@@ -191,9 +190,9 @@ def draw_shear(dis):# draw shear strain
 	e = Strain(dis)
 	shear = e[:,:,3]
 	#draw gridlines
-	for i in range(0,pos.shape[1]):
+	for i in range(0,pos.shape[1],2):
 		plt.plot(pos[:,i,0],pos[:,i,1],linewidth = 0.5, color = 'grey')
-	for j in range(0,pos.shape[0]):
+	for j in range(0,pos.shape[0],2):
 		plt.plot(pos[j,:,0],pos[j,:,1],linewidth = 0.5, color = 'grey')
 	x = dis.shape[0]-1  #it seems x, y used reversly underneath this line
 	y = dis.shape[1]-1
@@ -202,9 +201,14 @@ def draw_shear(dis):# draw shear strain
 	#plot shear map
 	x_mesh, y_mesh = pos[:,:,0],pos[:,:,1]
 	shear = shear[:-1,:-1] #the shear strain on the surface is not actual shear strain,removethem
+	#shear = gaussian_filter(shear, sigma = 1)#smooth graph a bit
 	shear_min, shear_max = -np.abs(shear).max(), np.abs(shear).max()
-	plt.pcolor(x_mesh, y_mesh, shear, cmap='RdBu', vmin=shear_min, vmax=shear_max)
-	plt.axis([0,y+20,0,x+20])
+	plt.pcolor(x_mesh, y_mesh, shear, cmap='RdBu', vmin=shear_min, vmax=shear_max) #plot exact psudocolor
+	#plt.imshow(shear, cmap='RdBu', vmin=shear_min, vmax=shear_max,
+    #       extent=[x_mesh.min(), x_mesh.max(), y_mesh.min(), y_mesh.max()],
+    #       interpolation='sinc', origin='lower')
+	plt.axis([0,55,0,55])
+	plt.colorbar()
 	plt.show()
 
 def Emap(dis): #finding the energy concentrated part
@@ -227,15 +231,42 @@ def Emap(dis): #finding the energy concentrated part
 	Emap_v[:,:,:,0] = Emap
 	Emap_v[:,:,:,1] = Emap
 	return Emap_v
+
+def Smooth(dis): #check if simply smooth displacement will reduce energy#seems useless
+	global lab 
+	global miu
+	dis0 = BC(dis)
+	e0 = Strain(dis) #strain and displacement befor smoothing
+	dis1 = np.copy(dis0)
 	
-sam = InitialC(50,50)
+	dis1[:,:,0] = gaussian_filter(dis[:,:,0], sigma = 3) #smoothing displacement function
+	dis1[:,:,1] = gaussian_filter(dis[:,:,0], sigma = 3)
+	dis1 = BC(dis1)
+	while (EE(Strain(dis1),lab,miu) < EE(Strain(dis0),lab,miu)): #keep smoothing if energy dicreased
+		dis0 = dis1
+		dis1[:,:,0] = gaussian_filter(dis[:,:,0], sigma = 3)
+		dis1[:,:,1] = gaussian_filter(dis[:,:,0], sigma = 3)
+		dis1 = BC(dis1)
+		print "Smooth energy to:" , EE(Strain(dis1),lab,miu)
+	return dis0
+lab = 0.015
+miu = 0.04		
+sam = InitialC(51,51)
 #sam = readfile()
-Ex = np.zeros(40)
+Ex = np.zeros(50)
 #draw_shear(sam)
+displ = 0.05 #globle variable displ, the displacement of indenter
 Ex[0],sam = anneal_s(sam) #quick annealing
+displ = 0.1
+Ex[0],sam = anneal_s(sam) #quick annealing
+displ = 0.2
+Ex[0],sam = anneal_s(sam)
+displ = 0.4
+Ex[0],sam = anneal_s(sam)
+#sam = Smooth(sam) # try smoothing
 draw_shear(sam)#roughly know the configuration of shear
 Ex[1],sam = anneal_s(sam)
-for i in range(0,37): #multiple iteration to get accurate result
+for i in range(0,47): #multiple iteration to get accurate result
 	Ex[i+2],sam = anneal(sam)
 	print "anneal time:" , i
 	print "E = ", Ex[i+2]
@@ -246,4 +277,4 @@ draw_shear(sam)
 Ex = Ex[:-1]
 plt.plot(Ex)
 plt.show()
-savefile(sam)
+#savefile(sam)
